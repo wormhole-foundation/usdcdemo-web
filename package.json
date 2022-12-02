@@ -1,0 +1,40 @@
+{
+  "name": "wormhole-usdc-demo",
+  "version": "0.0.1",
+  "private": true,
+  "description": "wormhole-usdc-demo",
+  "author": "Evan Gray",
+  "keywords": [
+    "gatsby"
+  ],
+  "scripts": {
+    "develop": "gatsby develop",
+    "start": "gatsby develop",
+    "build": "gatsby build",
+    "serve": "gatsby serve",
+    "clean": "gatsby clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@certusone/wormhole-sdk": "^0.9.4",
+    "@emotion/react": "^11.10.5",
+    "@emotion/styled": "^11.10.5",
+    "@fontsource/chakra-petch": "^4.5.9",
+    "@fontsource/ibm-plex-mono": "^4.5.12",
+    "@fontsource/ibm-plex-sans": "^4.5.13",
+    "@mui/icons-material": "^5.10.16",
+    "@mui/material": "^5.10.16",
+    "dotenv": "^16.0.3",
+    "gatsby": "^5.2.0",
+    "gatsby-plugin-react-helmet": "^6.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-helmet": "^6.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.9",
+    "@types/react": "^18.0.25",
+    "@types/react-dom": "^18.0.8",
+    "typescript": "^4.8.4"
+  }
+}
