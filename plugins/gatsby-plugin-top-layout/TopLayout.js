@@ -37,7 +37,7 @@ let theme = createTheme({
     body2: {
       fontWeight: 300,
       lineHeight: 1.57,
-      fontSize: 14,
+      fontSize: 16,
       color: "#fff",
       fontFamily: ["Chakra petch", "Helvetica", "Arial"].join(","),
     },

@@ -1,14 +1,6 @@
-import React, { useEffect, useState } from "react";
-import {
-  AppBar,
-  Box,
-  Button,
-  Link,
-  useTheme,
-  useMediaQuery,
-  Toolbar,
-} from "@mui/material";
+import { AppBar, Link, Toolbar } from "@mui/material";
 import { Link as RouterLink } from "gatsby";
+import React from "react";
 
 const Header = () => {
   return (
