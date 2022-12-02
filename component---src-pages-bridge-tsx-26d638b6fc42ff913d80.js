@@ -1,2 +1,0 @@
-"use strict";(self.webpackChunkwormhole_usdc_demo=self.webpackChunkwormhole_usdc_demo||[]).push([[452],{8426:function(e,t,n){n.r(t);var l=n(5401),a=n(1647),m=n(7294),r=n(3368),c=n(1470);t.default=e=>{let{location:t}=e;return m.createElement(r.Z,null,m.createElement(c.H,{title:"USDC Bridge",pathname:t.pathname}),m.createElement(l.Z,{maxWidth:"sm",sx:{mt:10,textAlign:"center"}},m.createElement(a.Z,null,"Coming Soon")))}}}]);
-//# sourceMappingURL=component---src-pages-bridge-tsx-26d638b6fc42ff913d80.js.map
