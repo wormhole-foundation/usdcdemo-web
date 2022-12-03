@@ -94,8 +94,8 @@ const IndexPage: React.FC<PageProps> = ({ location }) => {
         <Fade in={t > 4} timeout={FADE_TIMEOUT}>
           <Box>
             <Typography sx={{ mb: 2, maxWidth: 600 }}>
-              <NoSplit>Open source from the start.</NoSplit> Dive in and develop
-              on the
+              <NoSplit>Open source from the start.</NoSplit>{" "}
+              Dive in and develop on the{" "}
               <NoSplit>cutting-edge of cross-chain.</NoSplit>
             </Typography>
             <Button
