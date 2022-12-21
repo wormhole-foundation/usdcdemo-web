@@ -1,6 +1,7 @@
-import { ArrowForward, SwapHoriz } from "@mui/icons-material";
+import { SwapHorizontalCircle } from "@mui/icons-material";
 import { IconButton } from "@mui/material";
 import React from "react";
+import swapIcon from "../icons/swap.svg";
 
 export default function ChainSelectArrow({
   onClick,
@@ -9,20 +10,9 @@ export default function ChainSelectArrow({
   onClick: () => void;
   disabled: boolean;
 }) {
-  const [showSwap, setShowSwap] = React.useState(false);
-
   return (
-    <IconButton
-      onClick={onClick}
-      onMouseEnter={() => {
-        setShowSwap(true);
-      }}
-      onMouseLeave={() => {
-        setShowSwap(false);
-      }}
-      disabled={disabled}
-    >
-      {showSwap ? <SwapHoriz /> : <ArrowForward />}
+    <IconButton onClick={onClick} disabled={disabled}>
+      <img src={swapIcon} width="48px" height="48px" alt="swap" />
     </IconButton>
   );
 }

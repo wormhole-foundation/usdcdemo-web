@@ -7,7 +7,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({
   children: React.ReactNode;
 }) => (
   <main style={{ overflow: "hidden", position: "relative" }}>
-    <Header />
+    {/* <Header /> */}
     <div style={{ minHeight: "calc(100vh - 110px)" }}>{children}</div>
   </main>
 );

@@ -24,7 +24,7 @@ const ToggleConnectedButton = ({
         onClick={disconnect}
         sx={{
           display: "flex",
-          margin: "8px auto",
+          margin: "24px auto",
           width: "100%",
           "& img": { height: 24, width: 24 },
         }}
@@ -44,12 +44,12 @@ const ToggleConnectedButton = ({
       onClick={connect}
       sx={{
         display: "flex",
-        margin: "8px auto",
+        margin: "24px auto",
         width: "100%",
         "& img": { height: 24, width: 24 },
       }}
     >
-      Connect
+      Connect Wallet
     </Button>
   );
 };

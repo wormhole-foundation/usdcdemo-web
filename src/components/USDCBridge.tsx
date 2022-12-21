@@ -50,7 +50,11 @@ import {
 import useAllowance from "../hooks/useAllowance";
 import useIsWalletReady from "../hooks/useIsWalletReady";
 import {
+  AVAX_CIRCLE_EMITTER_ADDRESS,
   CHAINS_BY_ID,
+  CIRCLE_INTEGRATION_ADDRESS_AVALANCHE,
+  CIRCLE_INTEGRATION_ADDRESS_ETHEREUM,
+  ETH_CIRCLE_EMITTER_ADDRESS,
   getBridgeAddressForChain,
   getEvmChainId,
   WORMHOLE_RPC_HOSTS,
@@ -59,11 +63,14 @@ import {
   ethTokenToParsedTokenAccount,
   getEthereumToken,
   ParsedTokenAccount,
+  switchEvmProviderNetwork,
 } from "../utils/ethereum";
 import {
   EVM_RPC_MAP,
   METAMASK_CHAIN_PARAMETERS,
 } from "../utils/metaMaskChainParameters";
+import { handleCircleMessageInLogs, sleep } from "../utils/circle";
+import ErrorIcon from "@mui/icons-material/Error";
 
 // Ported from example-token-bridge-ui
 
@@ -74,72 +81,6 @@ const infoContainer = {
   mb: 1,
   mx: 0,
 };
-
-function findCircleMessageInLogs(
-  logs: ethers.providers.Log[],
-  circleEmitterAddress: string
-): string | null {
-  for (const log of logs) {
-    if (log.address === circleEmitterAddress) {
-      const messageSentIface = new ethers.utils.Interface([
-        "event MessageSent(bytes message)",
-      ]);
-      return messageSentIface.parseLog(log).args.message as string;
-    }
-  }
-
-  return null;
-}
-
-async function sleep(timeout: number) {
-  return new Promise((resolve) => setTimeout(resolve, timeout));
-}
-
-async function getCircleAttestation(
-  messageHash: ethers.BytesLike,
-  timeout: number = 2000
-) {
-  while (true) {
-    // get the post
-    const response = await axios
-      .get(`https://iris-api-sandbox.circle.com/attestations/${messageHash}`)
-      .catch((reason) => {
-        return null;
-      })
-      .then(async (response: AxiosResponse | null) => {
-        if (
-          response !== null &&
-          response.status === 200 &&
-          response.data.status === "complete"
-        ) {
-          return response.data.attestation as string;
-        }
-
-        return null;
-      });
-
-    if (response !== null) {
-      return response;
-    }
-
-    await sleep(timeout);
-  }
-}
-
-async function handleCircleMessageInLogs(
-  logs: ethers.providers.Log[],
-  circleEmitterAddress: string
-): Promise<[string | null, string | null]> {
-  const circleMessage = findCircleMessageInLogs(logs, circleEmitterAddress);
-  if (circleMessage === null) {
-    return [null, null];
-  }
-
-  const circleMessageHash = ethers.utils.keccak256(circleMessage);
-  const signature = await getCircleAttestation(circleMessageHash);
-
-  return [circleMessage, signature];
-}
 
 // const USDC_CHAINS = CHAINS.filter(
 //   (c) => c.id === CHAIN_ID_ETH || c.id === CHAIN_ID_AVAX
@@ -155,8 +96,8 @@ const CIRCLE_BRIDGE_ADDRESSES: { [key in ChainId]?: string } = {
   [CHAIN_ID_AVAX]: "0x0fC1103927AF27aF808D03135214718bCEDbE9ad",
 };
 const CIRCLE_EMITTER_ADDRESSES: { [key in ChainId]?: string } = {
-  [CHAIN_ID_ETH]: "0x40A61D3D2AfcF5A5d31FcDf269e575fB99dd87f7",
-  [CHAIN_ID_AVAX]: "0x52FfFb3EE8Fa7838e9858A2D5e454007b9027c3C",
+  [CHAIN_ID_ETH]: ETH_CIRCLE_EMITTER_ADDRESS,
+  [CHAIN_ID_AVAX]: AVAX_CIRCLE_EMITTER_ADDRESS,
 };
 const CIRCLE_DOMAINS: { [key in ChainId]?: number } = {
   [CHAIN_ID_ETH]: 0,
@@ -167,12 +108,12 @@ const CIRCLE_DOMAIN_TO_WORMHOLE_CHAIN: { [key in number]: ChainId } = {
   1: CHAIN_ID_AVAX,
 };
 const USDC_RELAYER: { [key in ChainId]?: string } = {
-  [CHAIN_ID_ETH]: "0x2dacca34c172687efa15243a179ea9e170864a67",
-  [CHAIN_ID_AVAX]: "0x7b135d7959e59ba45c55ae08c14920b06f2658ec",
+  [CHAIN_ID_ETH]: "0xC0a4e16a5B1e7342EF9c2837F4c94cB66A91601C",
+  [CHAIN_ID_AVAX]: "0xfC6d1D7A5a511F9555Fc013a296Ed47c9C297fB3",
 };
 const USDC_WH_INTEGRATION: { [key in ChainId]?: string } = {
-  [CHAIN_ID_ETH]: "0xbdcc4ebe3157df347671e078a41ee5ce137cd306",
-  [CHAIN_ID_AVAX]: "0xb200977d46aea35ce6368d181534f413570a0f54",
+  [CHAIN_ID_ETH]: CIRCLE_INTEGRATION_ADDRESS_ETHEREUM,
+  [CHAIN_ID_AVAX]: CIRCLE_INTEGRATION_ADDRESS_AVALANCHE,
 };
 const USDC_WH_EMITTER: { [key in ChainId]?: string } = {
   [CHAIN_ID_ETH]: getEmitterAddressEth(USDC_WH_INTEGRATION[CHAIN_ID_ETH] || ""),
@@ -186,7 +127,7 @@ type State = {
   targetChain: ChainId;
 };
 
-function USDC() {
+function USDCBridge() {
   const classes: any = {};
   // TODO: move to state with safety for switching
   const [{ sourceChain, targetChain }, setState] = useState<State>({
@@ -243,13 +184,23 @@ function USDC() {
   const [targetTxHash, setTargetTxHash] = useState<string>("");
   const vaa = transferInfo && transferInfo[0];
   const { isReady, statusMessage } = useIsWalletReady(
-    transferInfo ? targetChain : sourceChain
+    // switch to the target chain if the user needs to manually redeem
+    isRedeeming ? targetChain : sourceChain,
+    false
   );
   const { provider, signer, signerAddress } = useEthereumProvider();
   const shouldLockFields =
     isSending || isSendComplete || isRedeeming || isRedeemComplete;
   const preventNavigation =
     (isSending || isSendComplete || isRedeeming) && !isRedeemComplete;
+
+  useEffect(() => {
+    (async () => {
+      if (provider) {
+        await switchEvmProviderNetwork(provider, sourceChain);
+      }
+    })();
+  }, [sourceChain, provider]);
 
   // const handleSourceChange = useCallback((event) => {
   //   const v = event.target.value;
@@ -286,7 +237,7 @@ function USDC() {
     if (!sourceEVMChain) return;
     const sourceRPC = EVM_RPC_MAP[sourceEVMChain];
     if (!sourceRPC) return;
-    const provider = new ethers.providers.JsonRpcProvider(sourceRPC);
+    const provider = new ethers.providers.StaticJsonRpcProvider(sourceRPC);
     let cancelled = false;
     (async () => {
       const token = await getEthereumToken(sourceAsset, provider);
@@ -311,7 +262,7 @@ function USDC() {
     if (!sourceEVMChain) return;
     const sourceRPC = EVM_RPC_MAP[sourceEVMChain];
     if (!sourceRPC) return;
-    const provider = new ethers.providers.JsonRpcProvider(sourceRPC);
+    const provider = new ethers.providers.StaticJsonRpcProvider(sourceRPC);
     let cancelled = false;
     (async () => {
       const contract = new Contract(
@@ -338,19 +289,19 @@ function USDC() {
     if (!targetEVMChain) return;
     const targetRPC = EVM_RPC_MAP[targetEVMChain];
     if (!targetRPC) return;
-    const provider = new ethers.providers.JsonRpcProvider(targetRPC);
+    const provider = new ethers.providers.StaticJsonRpcProvider(targetRPC);
     let cancelled = false;
     (async () => {
       const contract = new Contract(
         targetRelayContract,
         [
-          `function calculateMaxSwapAmount(
+          `function calculateMaxSwapAmountIn(
               address token
           ) external view returns (uint256)`,
         ],
         provider
       );
-      const maxSwap = await contract.calculateMaxSwapAmount(targetAsset);
+      const maxSwap = await contract.calculateMaxSwapAmountIn(targetAsset);
       if (cancelled) return;
       setMaxSwapAmount(maxSwap.toBigInt());
     })();
@@ -367,20 +318,20 @@ function USDC() {
     if (!targetEVMChain) return;
     const targetRPC = EVM_RPC_MAP[targetEVMChain];
     if (!targetRPC) return;
-    const provider = new ethers.providers.JsonRpcProvider(targetRPC);
+    const provider = new ethers.providers.StaticJsonRpcProvider(targetRPC);
     let cancelled = false;
     (async () => {
       const contract = new Contract(
         targetRelayContract,
         [
-          `function calculateNativeSwapAmount(
+          `function calculateNativeSwapAmountOut(
             address token,
             uint256 toNativeAmount
         ) external view returns (uint256)`,
         ],
         provider
       );
-      const estimatedSwap = await contract.calculateNativeSwapAmount(
+      const estimatedSwap = await contract.calculateNativeSwapAmountOut(
         targetAsset,
         debouncedToNativeAmount
       );
@@ -396,8 +347,11 @@ function USDC() {
     if (!isSendComplete) return;
     if (!vaa) return;
     if (!targetCircleIntegrationContract) return;
-    if (!isReady) return;
-    if (!signer) return;
+    const targetEVMChain = getEvmChainId(targetChain);
+    if (!targetEVMChain) return;
+    const targetRPC = EVM_RPC_MAP[targetEVMChain];
+    if (!targetRPC) return;
+    const provider = new ethers.providers.StaticJsonRpcProvider(targetRPC);
     const hash = hexlify(keccak256(parseVaa(arrayify(vaa)).hash));
     let cancelled = false;
     (async () => {
@@ -409,7 +363,7 @@ function USDC() {
             [
               `function isMessageConsumed(bytes32 hash) external view returns (bool)`,
             ],
-            signer
+            provider
           );
           wasRedeemed = await contract.isMessageConsumed(hash);
           if (!wasRedeemed) await sleep(5000);
@@ -427,7 +381,7 @@ function USDC() {
     return () => {
       cancelled = true;
     };
-  }, [isSendComplete, vaa, targetCircleIntegrationContract, isReady, signer]);
+  }, [isSendComplete, vaa, targetCircleIntegrationContract]);
   const handleAmountChange = useCallback((event: any) => {
     setAmount(event.target.value);
   }, []);
@@ -497,6 +451,16 @@ function USDC() {
       );
     };
   }, [approveAmount]);
+  const amountReceived = useMemo(() => {
+    if (transferAmountParsed) {
+      const received =
+        transferAmountParsed - (relayerFee || BigInt(0)) - toNativeAmount;
+      if (received > 0) {
+        return formatUnits(received, USDC_DECIMALS);
+      }
+    }
+    return "";
+  }, [transferAmountParsed, relayerFee, toNativeAmount]);
 
   const handleTransferClick = useCallback(() => {
     if (!isReady) return;
@@ -610,14 +574,16 @@ function USDC() {
     if (!transferInfo) return;
     if (!targetRelayContract) return;
     if (!vaa) return;
+    if (!provider) return;
     setIsRedeeming(true);
     (async () => {
       try {
+        await switchEvmProviderNetwork(provider, targetChain);
         // adapted from https://github.com/wormhole-foundation/example-circle-relayer/blob/c488fe61c528b6099a90f01f42e796df7f330485/relayer/src/main.ts
         const contract = new Contract(
           targetRelayContract,
           [
-            `function calculateNativeSwapAmount(
+            `function calculateNativeSwapAmountOut(
                 address token,
                 uint256 toNativeAmount
                 ) external view returns (uint256)`,
@@ -640,7 +606,7 @@ function USDC() {
         const toNativeAmount = ethers.utils.hexlify(
           payloadArray.subarray(180, 212)
         );
-        const nativeSwapQuote = await contract.calculateNativeSwapAmount(
+        const nativeSwapQuote = await contract.calculateNativeSwapAmountOut(
           token,
           toNativeAmount
         );
@@ -674,6 +640,8 @@ function USDC() {
     targetContract,
     targetRelayContract,
     vaa,
+    targetChain,
+    provider,
   ]);
 
   useEffect(() => {
@@ -684,288 +652,328 @@ function USDC() {
       };
     }
   }, [preventNavigation]);
+
   return (
-    <>
-      <Container maxWidth="xs">
-        <KeyAndBalance chainId={sourceChain} />
+    <Container
+      sx={{
+        backgroundColor: "rgba(0,0,0,0.5)",
+        border: "0.5px solid rgba(255, 255, 255, 0.35)",
+        marginTop: "32px",
+      }}
+    >
+      <KeyAndBalance chainId={sourceChain} />
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          marginTop: "48px",
+        }}
+      >
         <Box
           sx={{
             display: "flex",
+            height: "160px",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            marginTop: 2,
+            width: "100%",
+            "& > .MuiTypography-root": {
+              marginTop: "8px",
+            },
+            "& img": { height: 80, maxWidth: 80 },
           }}
         >
+          <Typography fontSize={20}>Source</Typography>
           <Box
             sx={{
-              border: (theme) => `1px solid ${theme.palette.divider}`,
-              borderRadius: "4px",
               display: "flex",
-              width: "160px",
-              maxWidth: "160px",
-              height: "160px",
-              flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
-              "& > .MuiTypography-root": {
-                marginTop: "8px",
-              },
-              "& img": { height: 80, maxWidth: 80 },
+              justifyContent: "left",
+              width: "100%",
+              height: "56px",
+              backgroundColor: "rgba(255, 255, 255, 0.1)",
             }}
           >
             <img
               src={CHAINS_BY_ID[sourceChain].logo}
               alt={CHAINS_BY_ID[sourceChain].name}
-              className={classes.chainLogo}
+              width="24px"
+              height="24px"
+              style={{ marginLeft: "16px" }}
             />
-            <Typography>Source</Typography>
+            <Typography sx={{ marginLeft: "16px" }}>
+              {CHAINS_BY_ID[sourceChain].name}
+            </Typography>
           </Box>
-          <Box sx={{ flexGrow: 1, textAlign: "center" }}>
+          <NumberTextField
+            label="Send (USDC)"
+            fullWidth
+            sx={{ marginTop: 2 }}
+            value={amount}
+            onChange={handleAmountChange}
+            disabled={shouldLockFields}
+            onMaxClick={
+              balance && balance.uiAmountString ? handleMaxClick : undefined
+            }
+          />
+        </Box>
+        <Box
+          sx={{
+            textAlign: "center",
+            marginTop: "42px",
+            position: "relative",
+            width: "32px",
+          }}
+        >
+          <Box
+            sx={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              zIndex: 1,
+            }}
+          >
             <ChainSelectArrow
               onClick={handleSwitch}
               disabled={shouldLockFields}
             />
           </Box>
+        </Box>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "100%",
+            "& > .MuiTypography-root": {
+              marginTop: "8px",
+            },
+            "& img": { height: 80, maxWidth: 80 },
+          }}
+        >
+          <Typography fontSize={20}>Target</Typography>
           <Box
             sx={{
-              border: (theme) => `1px solid ${theme.palette.divider}`,
-              borderRadius: "4px",
               display: "flex",
-              width: "160px",
-              maxWidth: "160px",
-              height: "160px",
-              flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
-              "& > .MuiTypography-root": {
-                marginTop: "8px",
-              },
-              "& img": { height: 80, maxWidth: 80 },
+              justifyContent: "left",
+              width: "100%",
+              height: "56px",
+              backgroundColor: "rgba(255, 255, 255, 0.1)",
             }}
           >
             <img
               src={CHAINS_BY_ID[targetChain].logo}
               alt={CHAINS_BY_ID[targetChain].name}
-              className={classes.chainLogo}
+              width="24px"
+              height="24px"
+              style={{ marginLeft: "16px" }}
             />
-            <Typography>Target</Typography>
+            <Typography sx={{ marginLeft: "16px" }}>
+              {CHAINS_BY_ID[targetChain].name}
+            </Typography>
           </Box>
-        </Box>
-        <NumberTextField
-          variant="outlined"
-          label="Amount (USDC)"
-          fullWidth
-          sx={{ marginTop: 2 }}
-          value={amount}
-          onChange={handleAmountChange}
-          disabled={shouldLockFields}
-          onMaxClick={
-            balance && balance.uiAmountString ? handleMaxClick : undefined
-          }
-        />
-        <Box sx={infoContainer}>
-          <Typography variant="body2" style={{ flexGrow: 1 }}>
-            Source Balance
-          </Typography>
-          <Typography variant="body2">
-            {balance?.uiAmountString || 0} USDC
-          </Typography>
-        </Box>
-        {/* TODO: destination balance */}
-        <Box sx={infoContainer}>
-          <Typography variant="body2" style={{ flexGrow: 1 }}>
-            Relayer Fee
-          </Typography>
-          <Typography variant="body2">
-            {(relayerFee && `${formatUnits(relayerFee, USDC_DECIMALS)} USDC`) ||
-              null}
-          </Typography>
-        </Box>
-        <Box sx={infoContainer}>
-          <Typography variant="body2" style={{ flexGrow: 1 }}>
-            Destination Gas
-          </Typography>
-          <Typography variant="body2">
-            {formatUnits(toNativeAmount, USDC_DECIMALS)} USDC
-          </Typography>
-        </Box>
-        {/* TODO: enforce max */}
-        <Box
-          sx={{
-            mt: 0.5,
-            mb: 2,
-            mx: 0,
-            "& .MuiSlider-thumb.MuiSlider-active": {
-              // avoid increasing the margin further
-              boxShadow: "0px 0px 0px 12px rgb(63 81 181 / 16%)",
-            },
-          }}
-        >
-          <Slider
-            disabled={shouldLockFields}
-            onChange={handleSliderChange}
-            value={Number(formatUnits(toNativeAmount, USDC_DECIMALS))}
-            step={0.001}
-            min={0}
-            max={Number(formatUnits(maxSwapAmount || 0, USDC_DECIMALS))}
-            valueLabelDisplay="off"
+          <NumberTextField
+            label="Receive (USDC)"
+            fullWidth
+            sx={{ marginTop: 2 }}
+            value={amountReceived}
+            disabled={true}
           />
         </Box>
-        <Box sx={infoContainer}>
-          <Typography variant="body2" style={{ flexGrow: 1 }}>
-            Maximum Destination Gas
-          </Typography>
-          <Typography variant="body2">
-            {(maxSwapAmount &&
-              `${formatUnits(maxSwapAmount, USDC_DECIMALS)} USDC`) ||
-              null}
-          </Typography>
-        </Box>
-        <Box sx={infoContainer}>
-          <Typography variant="body2" style={{ flexGrow: 1 }}>
-            Estimated Destination Gas
-          </Typography>
-          <Typography variant="body2">
-            {(estimatedSwapAmount &&
-              `${formatUnits(
-                estimatedSwapAmount,
-                METAMASK_CHAIN_PARAMETERS[getEvmChainId(targetChain) || 1]
-                  ?.nativeCurrency.decimals || 18
-              )} ${
-                METAMASK_CHAIN_PARAMETERS[getEvmChainId(targetChain) || 1]
-                  ?.nativeCurrency.symbol || "ETH"
-              }`) ||
-              null}
-          </Typography>
-        </Box>
-        {transferInfo ? (
+      </Box>
+
+      <Box sx={infoContainer}>
+        <Typography variant="body2" style={{ flexGrow: 1 }}>
+          Source Balance
+        </Typography>
+        <Typography variant="body2">
+          {balance?.uiAmountString || 0} USDC
+        </Typography>
+      </Box>
+      <Box sx={infoContainer}>
+        <Typography variant="body2" style={{ flexGrow: 1 }}>
+          Relayer Fee
+        </Typography>
+        <Typography variant="body2">
+          {(relayerFee && `${formatUnits(relayerFee, USDC_DECIMALS)} USDC`) ||
+            null}
+        </Typography>
+      </Box>
+      <Box sx={infoContainer}>
+        <Typography variant="body2" style={{ flexGrow: 1 }}>
+          Destination Gas
+        </Typography>
+        <Typography variant="body2">
+          {formatUnits(toNativeAmount, USDC_DECIMALS)} USDC
+        </Typography>
+      </Box>
+      <Box
+        sx={{
+          mt: 0.5,
+          mb: 2,
+          mx: 0,
+          "& .MuiSlider-thumb.MuiSlider-active": {
+            // avoid increasing the margin further
+            boxShadow: "0px 0px 0px 12px rgb(63 81 181 / 16%)",
+          },
+        }}
+      >
+        <Slider
+          disabled={shouldLockFields}
+          onChange={handleSliderChange}
+          value={Number(formatUnits(toNativeAmount, USDC_DECIMALS))}
+          step={0.001}
+          min={0}
+          max={Number(formatUnits(maxSwapAmount || 0, USDC_DECIMALS))}
+          valueLabelDisplay="off"
+          sx={{
+            color: "#fff",
+          }}
+        />
+      </Box>
+      <Box sx={infoContainer}>
+        <Typography variant="body2" style={{ flexGrow: 1 }}>
+          Maximum Destination Gas
+        </Typography>
+        <Typography variant="body2">
+          {(maxSwapAmount &&
+            `${formatUnits(maxSwapAmount, USDC_DECIMALS)} USDC`) ||
+            null}
+        </Typography>
+      </Box>
+      <Box sx={infoContainer}>
+        <Typography variant="body2" style={{ flexGrow: 1 }}>
+          Estimated Destination Gas
+        </Typography>
+        <Typography variant="body2">
+          {(estimatedSwapAmount &&
+            `${formatUnits(
+              estimatedSwapAmount,
+              METAMASK_CHAIN_PARAMETERS[getEvmChainId(targetChain) || 1]
+                ?.nativeCurrency.decimals || 18
+            )} ${
+              METAMASK_CHAIN_PARAMETERS[getEvmChainId(targetChain) || 1]
+                ?.nativeCurrency.symbol || "ETH"
+            }`) ||
+            null}
+        </Typography>
+      </Box>
+      {transferInfo ? (
+        <ButtonWithLoader
+          disabled={!isReady || isRedeeming || isRedeemComplete}
+          onClick={handleRedeemClick}
+          showLoader={isRedeeming}
+          error={statusMessage}
+        >
+          Redeem
+        </ButtonWithLoader>
+      ) : approveButtonNeeded ? (
+        <>
           <ButtonWithLoader
-            disabled={!isReady || isRedeeming || isRedeemComplete}
-            onClick={handleRedeemClick}
-            showLoader={isRedeeming}
-            error={statusMessage}
-          >
-            Redeem
-          </ButtonWithLoader>
-        ) : approveButtonNeeded ? (
-          <>
-            {/* <FormControlLabel
-            control={
-              <Checkbox
-                checked={shouldApproveUnlimited}
-                onChange={toggleShouldApproveUnlimited}
-                color="primary"
-              />
+            disabled={isApproveDisabled}
+            onClick={
+              shouldApproveUnlimited ? approveUnlimited : approveExactAmount
             }
-            label="Approve Unlimited Tokens"
-          /> */}
-            <ButtonWithLoader
-              disabled={isApproveDisabled}
-              onClick={
-                shouldApproveUnlimited ? approveUnlimited : approveExactAmount
-              }
-              showLoader={isAllowanceFetching || isApproveProcessing}
-              error={errorMessage || amountError}
-            >
-              {"Approve " +
-                (shouldApproveUnlimited
-                  ? "Unlimited"
-                  : humanReadableTransferAmount
-                  ? humanReadableTransferAmount
-                  : amount) +
-                ` Token${notOne ? "s" : ""}`}
-            </ButtonWithLoader>
-          </>
-        ) : (
-          <ButtonWithLoader
-            disabled={!isReady || isSending}
-            onClick={handleTransferClick}
-            showLoader={isSending}
-            error={statusMessage || amountError}
+            showLoader={isAllowanceFetching || isApproveProcessing}
+            error={errorMessage || amountError}
           >
-            Transfer
+            {"Approve " +
+              (shouldApproveUnlimited
+                ? "Unlimited"
+                : humanReadableTransferAmount
+                ? humanReadableTransferAmount
+                : amount) +
+              ` Token${notOne ? "s" : ""}`}
           </ButtonWithLoader>
-        )}
-        {!statusMessage && !amountError ? (
+        </>
+      ) : (
+        <ButtonWithLoader
+          disabled={!isReady || isSending}
+          onClick={handleTransferClick}
+          showLoader={isSending}
+          error={statusMessage || amountError}
+        >
+          Transfer
+        </ButtonWithLoader>
+      )}
+      {!statusMessage && !amountError ? (
+        <Typography
+          variant="body2"
+          sx={{
+            color: (theme) => theme.palette.warning.light,
+            marginTop: 1,
+            textAlign: "center",
+          }}
+        >
+          {isApproveProcessing ? (
+            "Waiting for wallet approval and confirmation..."
+          ) : isSending ? (
+            !sourceTxHash ? (
+              "Waiting for wallet approval..."
+            ) : !sourceTxConfirmed ? (
+              "Waiting for tx confirmation..."
+            ) : (
+              "Waiting for Circle attestation..."
+            )
+          ) : isRedeeming ? (
+            !targetTxHash ? (
+              "Waiting for wallet approval..."
+            ) : (
+              "Waiting for tx confirmation..."
+            )
+          ) : (
+            <>&nbsp;</>
+          )}
+        </Typography>
+      ) : null}
+      <Box
+        sx={{
+          my: 3,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+        }}
+      >
+        <Stepper
+          activeStep={
+            isRedeemComplete
+              ? 3
+              : transferInfo
+              ? 2
+              : approveButtonNeeded
+              ? 0
+              : 1
+          }
+          alternativeLabel
+          sx={{ width: "100%", mb: 1 }}
+        >
+          <Step>
+            <StepLabel>Approve</StepLabel>
+          </Step>
+          <Step>
+            <StepLabel>Transfer</StepLabel>
+          </Step>
+          <Step>
+            <StepLabel>Redeem</StepLabel>
+          </Step>
+        </Stepper>
+        <Box sx={{ display: "flex", alignItems: "center" }}>
+          <ErrorIcon sx={{ color: "#58ECEC", mr: 1 }} />
           <Typography
-            variant="body2"
             sx={{
-              color: (theme) => theme.palette.warning.light,
-              marginTop: 1,
-              textAlign: "center",
+              color: "#58ECEC",
             }}
           >
-            {isApproveProcessing ? (
-              "Waiting for wallet approval and confirmation..."
-            ) : isSending ? (
-              !sourceTxHash ? (
-                "Waiting for wallet approval..."
-              ) : !sourceTxConfirmed ? (
-                "Waiting for tx confirmation..."
-              ) : (
-                "Waiting for Circle attestation..."
-              )
-            ) : isRedeeming ? (
-              !targetTxHash ? (
-                "Waiting for wallet approval..."
-              ) : (
-                "Waiting for tx confirmation..."
-              )
-            ) : (
-              <>&nbsp;</>
-            )}
+            This is a testnet release only; prices don't reflect reality.
           </Typography>
-        ) : null}
-        <Box sx={{ marginTop: 4 }}>
-          <Stepper
-            activeStep={
-              isRedeemComplete
-                ? 3
-                : transferInfo
-                ? 2
-                : approveButtonNeeded
-                ? 0
-                : 1
-            }
-            alternativeLabel
-          >
-            <Step>
-              <StepLabel>Approve</StepLabel>
-            </Step>
-            <Step>
-              <StepLabel>Transfer</StepLabel>
-            </Step>
-            <Step>
-              <StepLabel>Redeem</StepLabel>
-            </Step>
-          </Stepper>
         </Box>
-      </Container>
-    </>
+      </Box>
+    </Container>
   );
 }
 
-const BridgePage: React.FC<PageProps> = ({ location }) => {
-  return (
-    <Layout>
-      <SEO title="USDC Bridge" pathname={location.pathname} />
-      <EthereumProviderProvider>
-        <Container
-          sx={{
-            maxWidth: { xl: 540 },
-            p: 4,
-            margin: "auto",
-            borderRadius: 4,
-            mt: { xs: 2, sm: 10 },
-            backgroundColor: "rgba(255, 255, 255, .03)",
-            backdropFilter: "blur(5px)",
-          }}
-        >
-          <USDC />
-        </Container>
-      </EthereumProviderProvider>
-    </Layout>
-  );
-};
-
-export default BridgePage;
+export default USDCBridge;

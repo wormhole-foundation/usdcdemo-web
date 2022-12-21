@@ -19,7 +19,13 @@ export default function NumberTextField({
           ...theme.typography.body1,
           pt: "18px",
         }),
+        "& .MuiInputBase-input.Mui-disabled": {
+          WebkitTextFillColor: "#fff",
+        },
         ...(props.sx || {}),
+      }}
+      InputLabelProps={{
+        style: { color: "#fff" },
       }}
       InputProps={{
         endAdornment: onMaxClick ? (
@@ -27,7 +33,6 @@ export default function NumberTextField({
             <Button
               onClick={onMaxClick}
               disabled={props.disabled}
-              variant="outlined"
               sx={{ height: 32 }}
             >
               Max
