@@ -11,10 +11,6 @@ const Header = () => {
             Home
           </Link>
           &nbsp; &nbsp; &nbsp;
-          <Link component={RouterLink} to="/bridge">
-            Bridge
-          </Link>
-          &nbsp; &nbsp; &nbsp;
           <Link component={RouterLink} to="/docs">
             Docs
           </Link>

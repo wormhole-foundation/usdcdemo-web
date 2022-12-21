@@ -1,6 +1,7 @@
-import { ethers_contracts } from "@certusone/wormhole-sdk";
+import { ChainId, ethers_contracts } from "@certusone/wormhole-sdk";
 import { ethers } from "ethers";
-import { arrayify, formatUnits } from "ethers/lib/utils";
+import { formatUnits, hexStripZeros, hexlify } from "ethers/lib/utils";
+import { getEvmChainId } from "./consts";
 
 export interface ParsedTokenAccount {
   publicKey: string;
@@ -71,4 +72,23 @@ export async function ethTokenToParsedTokenAccount(
     symbol,
     name
   );
+}
+
+export async function switchEvmProviderNetwork(
+  provider: ethers.providers.Web3Provider,
+  chainId: ChainId
+) {
+  const evmChainId = getEvmChainId(chainId);
+  if (evmChainId === undefined) {
+    throw new Error("Unknown chainId");
+  }
+  try {
+    await provider.send("wallet_switchEthereumChain", [
+      { chainId: hexStripZeros(hexlify(evmChainId)) },
+    ]);
+  } catch {}
+  //const network = await provider.getNetwork();
+  //if (network.chainId !== evmChainId) {
+  //  throw new Error("Could not switch network");
+  //}
 }

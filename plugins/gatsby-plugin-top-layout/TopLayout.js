@@ -31,7 +31,7 @@ let theme = createTheme({
     body1: {
       fontWeight: 300,
       lineHeight: 1.57,
-      fontSize: 20,
+      fontSize: 14,
       color: "#fff",
     },
     body2: {
@@ -50,7 +50,7 @@ let theme = createTheme({
     h2: {
       fontWeight: 300,
       fontFamily: ["Chakra petch", "Helvetica", "Arial"].join(","),
-      fontSize: 56,
+      fontSize: 52,
       lineHeight: 1,
     },
     h3: {
@@ -109,6 +109,7 @@ let theme = createTheme({
       styleOverrides: {
         root: {
           fontSize: 12,
+          height: 55,
           lineHeight: 1,
           fontWeight: 600,
           color: "#fff",
@@ -126,7 +127,7 @@ let theme = createTheme({
         outlined: {
           borderRadius: 0,
           padding: "0 23px",
-          height: 40,
+          height: 55,
           border: "1px solid rgba(255,255,255, .5)",
           lineHeight: 1,
           position: "relative",
@@ -168,9 +169,9 @@ let theme = createTheme({
           borderRadius: 0,
           padding: "13px 23px",
           border: "1px solid rgba(255,255,255, .5)",
-          backgroundColor: "#fff",
+          backgroundColor: "rgba(255, 255, 255, 0.1)",
           lineHeight: 1,
-          color: "#000",
+          color: "#fff",
           "&:hover": {
             color: "#000",
             backgroundColor: "rgba(255,255,255, .9)",
@@ -223,6 +224,7 @@ let theme = createTheme({
           fontWeight: 600,
           fontSize: 12,
           borderRadius: 0,
+          backgroundColor: "rgba(255, 255, 255, 0.1)",
         },
       },
     },
