@@ -659,6 +659,8 @@ function USDCBridge() {
         backgroundColor: "rgba(0,0,0,0.5)",
         border: "0.5px solid rgba(255, 255, 255, 0.35)",
         marginTop: "32px",
+        maxWidth: 590,
+        minWidth: { md: 590 },
       }}
     >
       <KeyAndBalance chainId={sourceChain} />
